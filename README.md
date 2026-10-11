@@ -23,7 +23,7 @@ Settings can be overridden via env (`CTID`, `HN`, `RAM`, `DISK`, `STORAGE`, `BRG
 bash install.sh update <CTID>    # or inside the container: update-clothing-haul
 ```
 
-The one-liner needs the repo to be public (raw.githubusercontent.com). For a private repo, copy `install.sh` to the host and set `HAUL_REPO`/a token-capable mirror.
+The one-liner only works once the repo is public (it downloads from raw.githubusercontent.com). A fork can be installed with `HAUL_REPO=<user>/<repo>`.
 
 ## Accounts
 
