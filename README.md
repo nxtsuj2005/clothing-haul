@@ -9,8 +9,13 @@ Static page plus a tiny stdlib Python API (admin login, add/edit/delete items). 
 - `server/items.json` seed data; the live list is `/opt/clothing/items.json` on the LXC
 - `deploy.sh` copies page and API to the LXC (not the data)
 
-## Admin setup
+## Accounts
 
-No default password. On a fresh install the first visitor clicks "Admin einrichten" at the bottom of the page and picks a password (min. 4 chars). Only the salted scrypt hash and a signing secret are stored, in `/opt/clothing/config.json` on the server (never committed).
+No default password. On a fresh install the first visitor clicks "Ersten Account anlegen" and picks a name and password (min. 4 chars). That account is the admin, adopts the seed items and gets the sizes from `server/default_sizes.json`. The admin creates further accounts under "Konto".
 
-To reset the password: remove the `salt` and `hash` keys from that file and restart `clothing-api`; the setup prompt appears again. Until the password is set, anyone who can reach the page can claim admin, so set it right after deploying.
+- Everyone (also logged out) sees all items and everyone's size cards; the tabs filter by person.
+- Logged-in users add items and edit/delete their own; the admin can edit/delete all.
+- Each user maintains their own size cards under "Konto" (also password change).
+- Accounts live in `/opt/clothing/users.json` (salted scrypt hashes), the cookie signing secret in `/opt/clothing/config.json`. Neither is committed.
+
+Password reset: edit/remove the user in `users.json` (delete the file to start over with the setup prompt) and restart `clothing-api`. Until the first account exists, anyone who can reach the page can claim admin, so register right after deploying.

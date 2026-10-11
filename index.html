@@ -68,6 +68,17 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 .empty{padding:20px;color:var(--muted)}
 .thumb.none{display:block}
 @media (max-width:480px){.add{grid-template-columns:1fr 1fr}.add input:first-child{grid-column:1/-1}.add button{grid-column:1/-1}}
+.tabs{display:flex;flex-wrap:wrap;gap:8px}
+.tab{font:inherit;font-size:14px;font-weight:700;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:4px 14px;cursor:pointer}
+.tab[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.who{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin:0 0 6px}
+.sizeblock+.sizeblock{margin-top:14px}
+.owner{background:var(--accent-soft);color:var(--accent)}
+.srow{display:grid;grid-template-columns:1.2fr .8fr 1.5fr auto;gap:6px;margin-top:8px}
+.users{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.users div{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
+dialog h3{margin:16px 0 0;font-size:14px;font-family:var(--display);font-weight:400}
+dialog form+form{margin-top:4px}
 </style>
 </head>
 <body>
@@ -77,13 +88,10 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
     <p class="lead" id="lead">Einfach auf den Namen tippen und die angegebene Größe auswählen.</p>
   </header>
 
-  <section class="sizes" aria-label="Größen">
-    <div class="size"><div class="lbl">Hosen &amp; Jeans</div><div class="val">64</div><div class="note">bei Jeans in Zoll: W48 / L34</div></div>
-    <div class="size"><div class="lbl">T-Shirts</div><div class="val">4XL</div><div class="note">bewusst etwas weiter</div></div>
-    <div class="size"><div class="lbl">Jacke</div><div class="val">3XL</div><div class="note">bei bonprix: 64/66</div></div>
-  </section>
+  <div class="tabs" id="tabs" hidden></div>
+  <section id="sizes" aria-label="Größen"></section>
 
-  <div class="bar" id="bar" hidden><span>Admin-Modus</span><button class="btn" id="logout">Abmelden</button></div>
+  <div class="bar" id="bar" hidden><span id="who"></span><span><button class="btn" id="accbtn">Konto</button> <button class="btn" id="logout">Abmelden</button></span></div>
   <form class="add" id="addform" hidden>
     <input id="a-url" type="url" placeholder="Link zum Artikel einfügen" required>
     <input id="a-size" placeholder="Größe" required>
@@ -94,18 +102,39 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
   <div id="list"></div>
 
   <p class="foot">Falls eine Größe als Zoll angezeigt wird (z.&nbsp;B. „W48/L34“): Größe 64 entspricht W48, Länge L34. Gibt es nur Doppelgrößen, dann 64/66 (3XL) nehmen. Preise können sich ändern.</p>
-  <p class="foot"><button class="link" id="loginbtn">Admin</button></p>
+  <p class="foot"><button class="link" id="loginbtn">Anmelden</button></p>
 </div>
 
 <dialog id="logindlg">
   <form method="dialog" id="loginform">
+    <p class="foot" id="setup-hint" hidden>Noch kein Account vorhanden: Der erste Account wird Admin und kann danach weitere anlegen.</p>
+    <label for="un">Name</label>
+    <input id="un" autocomplete="username" required maxlength="30">
     <label for="pw" id="pw-lbl">Passwort</label>
     <input id="pw" type="password" autocomplete="current-password" required>
     <div id="pw2-wrap" hidden><label for="pw2">Passwort wiederholen</label>
     <input id="pw2" type="password" autocomplete="new-password"></div>
     <p class="msg" id="l-msg"></p>
-    <div class="row"><button type="button" class="btn" id="l-cancel">Abbrechen</button><button class="btn pri">Anmelden</button></div>
+    <div class="row"><button type="button" class="btn" id="l-cancel">Abbrechen</button><button class="btn pri" id="l-ok">Anmelden</button></div>
   </form>
+</dialog>
+
+<dialog id="accdlg">
+  <h3>Meine Größen</h3>
+  <div id="srows"></div>
+  <div class="row"><button type="button" class="btn" id="s-add">Zeile hinzufügen</button><button type="button" class="btn pri" id="s-save">Speichern</button></div>
+  <h3>Passwort ändern</h3>
+  <label for="np">Neues Passwort</label><input id="np" type="password" autocomplete="new-password">
+  <div class="row"><button type="button" class="btn pri" id="np-save">Ändern</button></div>
+  <div id="admin-only" hidden>
+    <h3>Accounts</h3>
+    <div class="users" id="ulist"></div>
+    <label for="nu-name">Neuer Account</label><input id="nu-name" placeholder="Name" maxlength="30">
+    <label for="nu-pw">Startpasswort</label><input id="nu-pw" type="password" autocomplete="new-password">
+    <div class="row"><button type="button" class="btn pri" id="nu-add">Anlegen</button></div>
+  </div>
+  <p class="msg" id="acc-msg"></p>
+  <div class="row"><button type="button" class="btn" id="acc-close">Schließen</button></div>
 </dialog>
 
 <dialog id="editdlg">
@@ -124,7 +153,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 
 <script>
 const $=id=>document.getElementById(id);
-let items=[], admin=false, setup=false, editId=null;
+let items=[], users=[], me=null, setup=false, editId=null, filter='all';
 
 async function api(method,path,body){
   const r=await fetch('/api'+path,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
@@ -138,12 +167,42 @@ function shopOf(u){
     if(h.includes('zalando'))return 'Zalando'; if(h.includes('bonprix'))return 'bonprix';
     return h;}catch{return 'Sonstige'}
 }
+const uname=id=>(users.find(u=>u.id===id)||{}).name||'';
+const canEdit=it=>me&&(me.admin||me.id===it.owner);
+
+function renderTabs(){
+  const t=$('tabs');t.replaceChildren();
+  t.hidden=users.length<2;
+  if(t.hidden){filter='all';return}
+  for(const [id,label] of [['all','Alle'],...users.map(u=>[String(u.id),u.name])]){
+    const b=el('button','tab',label);b.setAttribute('aria-pressed',filter===id);
+    b.onclick=()=>{filter=id;render()};t.append(b);
+  }
+}
+function renderSizes(){
+  const root=$('sizes');root.replaceChildren();
+  const shown=users.filter(u=>(filter==='all'||String(u.id)===filter)&&(u.sizes||[]).length);
+  for(const u of shown){
+    const blk=el('div','sizeblock');
+    if(users.length>1)blk.append(el('p','who',u.name));
+    const g=el('div','sizes');
+    for(const s of u.sizes){
+      const c=el('div','size');
+      c.append(el('div','lbl',s.label),el('div','val',s.value));
+      if(s.note)c.append(el('div','note',s.note));
+      g.append(c);
+    }
+    blk.append(g);root.append(blk);
+  }
+}
 function render(){
-  $('lead').textContent=items.length+' Teile. Einfach auf den Namen tippen und die angegebene Größe auswählen.';
+  renderTabs();renderSizes();
+  const vis=items.filter(i=>filter==='all'||String(i.owner)===filter);
+  $('lead').textContent=vis.length+' Teile. Einfach auf den Namen tippen und die angegebene Größe auswählen.';
   const groups=new Map();
-  for(const it of items){const s=shopOf(it.url);if(!groups.has(s))groups.set(s,[]);groups.get(s).push(it)}
+  for(const it of vis){const s=shopOf(it.url);if(!groups.has(s))groups.set(s,[]);groups.get(s).push(it)}
   const root=$('list');root.replaceChildren();
-  if(!items.length)root.append(el('p','empty','Noch keine Teile.'));
+  if(!vis.length)root.append(el('p','empty','Noch keine Teile.'));
   let n=0;
   for(const [shop,list] of groups){
     root.append(el('h2','shop',shop));
@@ -158,9 +217,11 @@ function render(){
       info.append(el('span','brand',it.brand));
       const a=el('a','name',it.name);a.href=it.url;a.target='_blank';a.rel='noopener';info.append(a);
       if(it.price)info.append(el('div','price',it.price+' €'));
-      const meta=el('div','meta');for(const t of it.tags||[])meta.append(el('span','chip',t));
+      const meta=el('div','meta');
+      if(users.length>1&&uname(it.owner))meta.append(el('span','chip owner',uname(it.owner)));
+      for(const t of it.tags||[])meta.append(el('span','chip',t));
       info.append(meta);
-      if(admin){
+      if(canEdit(it)){
         const acts=el('div','acts');
         const e=el('button','btn','Bearbeiten');e.onclick=()=>openEdit(it);
         const d=el('button','btn del','Löschen');d.onclick=()=>del(it);
@@ -172,27 +233,34 @@ function render(){
     root.append(ol);
   }
 }
-function setAdmin(v){
-  admin=v;$('bar').hidden=!v;$('addform').hidden=!v;$('loginbtn').hidden=v;render();
+function chrome(){
+  $('bar').hidden=!me;$('addform').hidden=!me;$('loginbtn').hidden=!!me;
+  $('loginbtn').textContent=setup?'Ersten Account anlegen':'Anmelden';
+  if(me)$('who').textContent='Angemeldet als '+me.name+(me.admin?' (Admin)':'');
 }
-async function load(){items=await api('GET','/items');render()}
+async function load(){[items,users]=await Promise.all([api('GET','/items'),api('GET','/users')]);render()}
+function setMe(u){me=u;setup=false;chrome();render()}
 
+// login / first-account dialog
 function authUi(){
-  $('loginbtn').textContent=setup?'Admin einrichten':'Admin';
-  $('pw-lbl').textContent=setup?'Neues Passwort (mind. 4 Zeichen)':'Passwort';
+  $('setup-hint').hidden=!setup;$('pw2-wrap').hidden=!setup;$('pw2').required=setup;
   $('pw').autocomplete=setup?'new-password':'current-password';
-  $('pw2-wrap').hidden=!setup;$('pw2').required=setup;
+  $('l-ok').textContent=setup?'Account anlegen':'Anmelden';
 }
-$('loginbtn').onclick=()=>{$('l-msg').textContent='';authUi();$('logindlg').showModal();$('pw').focus()};
+$('loginbtn').onclick=()=>{$('l-msg').textContent='';authUi();$('logindlg').showModal();$('un').focus()};
 $('l-cancel').onclick=()=>$('logindlg').close();
 $('loginform').onsubmit=async ev=>{
   ev.preventDefault();
   if(setup&&$('pw').value!==$('pw2').value){$('l-msg').textContent='Passwörter stimmen nicht überein';return}
-  try{await api('POST',setup?'/setup':'/login',{password:$('pw').value});$('pw').value='';$('pw2').value='';setup=false;$('logindlg').close();setAdmin(true)}
-  catch(e){$('l-msg').textContent=e.message}
+  try{
+    const r=await api('POST',setup?'/setup':'/login',{name:$('un').value.trim(),password:$('pw').value});
+    $('pw').value='';$('pw2').value='';$('logindlg').close();
+    setMe(r.user);await load();
+  }catch(e){$('l-msg').textContent=e.message}
 };
-$('logout').onclick=async()=>{await api('POST','/logout',{});setAdmin(false)};
+$('logout').onclick=async()=>{await api('POST','/logout',{});setMe(null)};
 
+// add / edit / delete items
 $('addform').onsubmit=async ev=>{
   ev.preventDefault();
   const b=$('a-btn');b.disabled=true;$('a-msg').textContent='Lade Artikeldaten …';
@@ -223,10 +291,50 @@ $('editform').onsubmit=async ev=>{
   catch(e){$('e-msg').textContent=e.message}
 };
 
+// account dialog: own sizes, password, user management (admin)
+function sizeRow(s){
+  const r=el('div','srow');
+  const f=(ph,v,k)=>{const i=el('input');i.placeholder=ph;i.value=v||'';i.dataset.k=k;i.maxLength=60;return i};
+  const x=el('button','btn del','×');x.type='button';x.onclick=()=>r.remove();
+  r.append(f('Bezeichnung',s.label,'label'),f('Größe',s.value,'value'),f('Hinweis',s.note,'note'),x);
+  return r;
+}
+function renderUsers(){
+  const l=$('ulist');l.replaceChildren();
+  for(const u of users){
+    const row=el('div');row.append(el('span',null,u.name+(u.admin?' (Admin)':'')));
+    if(u.id!==me.id){const d=el('button','btn del','Löschen');d.type='button';
+      d.onclick=async()=>{if(!confirm(u.name+' löschen? Die Teile gehen an dich.'))return;
+        try{await api('DELETE','/users/'+u.id);await load();renderUsers()}catch(e){$('acc-msg').textContent=e.message}};
+      row.append(d)}
+    l.append(row);
+  }
+}
+$('accbtn').onclick=()=>{
+  $('acc-msg').textContent='';
+  const rows=$('srows');rows.replaceChildren();
+  for(const s of (users.find(u=>u.id===me.id)||{}).sizes||[])rows.append(sizeRow(s));
+  $('admin-only').hidden=!me.admin;if(me.admin)renderUsers();
+  $('accdlg').showModal();
+};
+$('s-add').onclick=()=>$('srows').append(sizeRow({}));
+$('s-save').onclick=async()=>{
+  const sizes=[...$('srows').children].map(r=>Object.fromEntries([...r.querySelectorAll('input')].map(i=>[i.dataset.k,i.value])));
+  try{await api('PATCH','/me',{sizes});await load();$('acc-msg').textContent='Größen gespeichert.'}catch(e){$('acc-msg').textContent=e.message}
+};
+$('np-save').onclick=async()=>{
+  try{await api('PATCH','/me',{password:$('np').value});$('np').value='';$('acc-msg').textContent='Passwort geändert.'}catch(e){$('acc-msg').textContent=e.message}
+};
+$('nu-add').onclick=async()=>{
+  try{await api('POST','/users',{name:$('nu-name').value.trim(),password:$('nu-pw').value});
+    $('nu-name').value='';$('nu-pw').value='';await load();renderUsers();$('acc-msg').textContent='Account angelegt.'}
+  catch(e){$('acc-msg').textContent=e.message}
+};
+$('acc-close').onclick=()=>$('accdlg').close();
+
 (async()=>{
-  try{const me=await api('GET','/me');admin=me.admin;setup=me.setup}catch{}
-  authUi();
-  $('bar').hidden=!admin;$('addform').hidden=!admin;$('loginbtn').hidden=admin;
+  try{const r=await api('GET','/me');me=r.user;setup=r.setup}catch{}
+  chrome();
   try{await load()}catch(e){$('list').textContent='Konnte Liste nicht laden: '+e.message}
 })();
 </script>

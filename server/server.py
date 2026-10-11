@@ -11,52 +11,84 @@ LOCK = threading.Lock()
 FAILS = {}  # ip -> (count, first_ts)
 
 MIN_PW = 4
+USERS = os.environ.get("HAUL_USERS", "/opt/clothing/users.json")
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def save_conf():
-    tmp = CONF + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+def write_json(path, obj, mode=0o600):
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
     with os.fdopen(fd, "w") as f:
-        json.dump(CFG, f)
-    os.replace(tmp, CONF)
+        json.dump(obj, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
 
 
-# {"secret": hex} until an admin password is chosen, then also {"salt": hex, "hash": hex}
+# config.json holds only the signing secret; accounts live in users.json
 try:
     with open(CONF) as f:
         CFG = json.load(f)
 except FileNotFoundError:
     CFG = {"secret": secrets.token_hex(32)}
-    save_conf()
+    write_json(CONF, CFG)
+if "hash" in CFG:  # legacy single-password config: drop it, accounts replace it
+    CFG = {"secret": CFG["secret"]}
+    write_json(CONF, CFG)
+
+
+def load_users():
+    try:
+        with open(USERS) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+
+
+def save_users(users):
+    write_json(USERS, users)
 
 
 def hash_pw(pw, salt):
     return hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1).hex()
 
 
-def check_pw(pw):
-    if "hash" not in CFG:
-        return False
-    return hmac.compare_digest(hash_pw(pw, bytes.fromhex(CFG["salt"])), CFG["hash"])
+def set_pw(user, pw):
+    salt = os.urandom(16)
+    user["salt"], user["hash"] = salt.hex(), hash_pw(pw, salt)
 
 
-def cookie():
-    return "haul_admin=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (make_token(), 30 * 86400)
+def check_pw(user, pw):
+    return hmac.compare_digest(hash_pw(pw, bytes.fromhex(user["salt"])), user["hash"])
 
 
-def make_token():
-    exp = str(int(time.time()) + 30 * 86400)
-    sig = hmac.new(bytes.fromhex(CFG["secret"]), exp.encode(), "sha256").hexdigest()
-    return exp + "." + sig
+def sign(msg):
+    return hmac.new(bytes.fromhex(CFG["secret"]), msg.encode(), "sha256").hexdigest()
 
 
-def valid_token(tok):
+def cookie(uid):
+    msg = "%d.%d" % (uid, time.time() + 30 * 86400)
+    return "haul_auth=%s.%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (msg, sign(msg), 30 * 86400)
+
+
+def parse_token(tok):
     try:
-        exp, sig = tok.split(".")
-        good = hmac.new(bytes.fromhex(CFG["secret"]), exp.encode(), "sha256").hexdigest()
-        return hmac.compare_digest(sig, good) and int(exp) > time.time()
+        uid, exp, sig = tok.split(".")
+        if hmac.compare_digest(sig, sign(uid + "." + exp)) and float(exp) > time.time():
+            return int(uid)
     except Exception:
-        return False
+        pass
+    return None
+
+
+def clean_sizes(raw):
+    out = []
+    for r in (raw if isinstance(raw, list) else [])[:12]:
+        if isinstance(r, dict) and str(r.get("label", "")).strip():
+            out.append({k: str(r.get(k, "")).strip()[:60] for k in ("label", "value", "note")})
+    return out
+
+
+def public_user(u):
+    return {"id": u["id"], "name": u["name"], "admin": u.get("admin", False), "sizes": u.get("sizes", [])}
 
 
 def load():
@@ -65,10 +97,7 @@ def load():
 
 
 def save(items):
-    tmp = DATA + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(items, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, DATA)
+    write_json(DATA, items, 0o644)
 
 
 def safe_url(u):
@@ -152,12 +181,15 @@ class H(BaseHTTPRequestHandler):
         except ValueError:
             return {}
 
-    def admin(self):
+    def user(self):
         for c in (self.headers.get("Cookie") or "").split(";"):
             k, _, v = c.strip().partition("=")
-            if k == "haul_admin" and valid_token(v):
-                return True
-        return False
+            if k == "haul_auth":
+                uid = parse_token(v)
+                for u in load_users():
+                    if u["id"] == uid:
+                        return u
+        return None
 
     def ip(self):
         return self.headers.get("X-Real-IP") or self.client_address[0]
@@ -165,38 +197,77 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/items":
             return self.send(200, load())
+        if self.path == "/api/users":
+            return self.send(200, [public_user(u) for u in load_users()])
         if self.path == "/api/me":
-            return self.send(200, {"admin": self.admin(), "setup": "hash" not in CFG})
+            u = self.user()
+            return self.send(200, {"user": public_user(u) if u else None, "setup": not load_users()})
         self.send(404, {"error": "not found"})
+
+    def check_new_name_pw(self, d, users):
+        name, pw = str(d.get("name", "")).strip()[:30], str(d.get("password", ""))
+        if not name:
+            return None, None, "Name fehlt"
+        if len(pw) < MIN_PW:
+            return None, None, "Passwort: mindestens %d Zeichen" % MIN_PW
+        if any(u["name"].lower() == name.lower() for u in users):
+            return None, None, "Name schon vergeben"
+        return name, pw, None
 
     def do_POST(self):
         d = self.body()
-        if self.path == "/api/setup":
-            pw = str(d.get("password", ""))
-            if len(pw) < MIN_PW:
-                return self.send(400, {"error": "mindestens %d Zeichen" % MIN_PW})
-            with LOCK:
-                if "hash" in CFG:
-                    return self.send(409, {"error": "Admin ist schon eingerichtet"})
-                salt = os.urandom(16)
-                CFG["salt"], CFG["hash"] = salt.hex(), hash_pw(pw, salt)
-                save_conf()
-            return self.send(200, {"admin": True}, [("Set-Cookie", cookie())])
         if self.path == "/api/login":
             ip = self.ip()
             cnt, ts = FAILS.get(ip, (0, 0))
             if cnt >= 5 and time.time() - ts < 300:
                 return self.send(429, {"error": "zu viele Versuche, kurz warten"})
-            if check_pw(str(d.get("password", ""))):
-                FAILS.pop(ip, None)
-                return self.send(200, {"admin": True}, [("Set-Cookie", cookie())])
+            name = str(d.get("name", "")).strip().lower()
+            for u in load_users():
+                if u["name"].lower() == name and check_pw(u, str(d.get("password", ""))):
+                    FAILS.pop(ip, None)
+                    return self.send(200, {"user": public_user(u)}, [("Set-Cookie", cookie(u["id"]))])
             FAILS[ip] = (cnt + 1 if time.time() - ts < 300 else 1, time.time())
             time.sleep(1)
-            return self.send(401, {"error": "falsches Passwort"})
+            return self.send(401, {"error": "Name oder Passwort falsch"})
         if self.path == "/api/logout":
-            return self.send(200, {}, [("Set-Cookie", "haul_admin=; Path=/; Max-Age=0")])
-        if not self.admin():
+            return self.send(200, {}, [("Set-Cookie", "haul_auth=; Path=/; Max-Age=0")])
+        if self.path == "/api/setup":  # first account, becomes admin and adopts legacy items
+            with LOCK:
+                users = load_users()
+                if users:
+                    return self.send(409, {"error": "Es gibt schon Accounts"})
+                name, pw, err = self.check_new_name_pw(d, users)
+                if err:
+                    return self.send(400, {"error": err})
+                u = {"id": 1, "name": name, "admin": True, "sizes": []}
+                try:
+                    with open(os.path.join(HERE, "default_sizes.json")) as f:
+                        u["sizes"] = clean_sizes(json.load(f))
+                except FileNotFoundError:
+                    pass
+                set_pw(u, pw)
+                save_users([u])
+                items = load()
+                for i in items:
+                    i.setdefault("owner", 1)
+                save(items)
+            return self.send(200, {"user": public_user(u)}, [("Set-Cookie", cookie(1))])
+        me = self.user()
+        if not me:
             return self.send(401, {"error": "nicht eingeloggt"})
+        if self.path == "/api/users":
+            if not me.get("admin"):
+                return self.send(403, {"error": "nur Admin"})
+            with LOCK:
+                users = load_users()
+                name, pw, err = self.check_new_name_pw(d, users)
+                if err:
+                    return self.send(400, {"error": err})
+                u = {"id": max(x["id"] for x in users) + 1, "name": name, "admin": False, "sizes": []}
+                set_pw(u, pw)
+                users.append(u)
+                save_users(users)
+            return self.send(201, public_user(u))
         if self.path == "/api/items":
             url = str(d.get("url", "")).strip()
             if not re.match(r"https?://", url):
@@ -211,6 +282,7 @@ class H(BaseHTTPRequestHandler):
                 "price": str(d.get("price") or sc["price"])[:20],
                 "size": str(d.get("size", ""))[:20],
                 "tags": [str(t)[:30] for t in d.get("tags", [])][:6],
+                "owner": me["id"],
             }
             with LOCK:
                 items = load()
@@ -224,38 +296,80 @@ class H(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/items/(\d+)", self.path)
         return int(m.group(1)) if m else None
 
+    def user_id(self):
+        m = re.fullmatch(r"/api/users/(\d+)", self.path)
+        return int(m.group(1)) if m else None
+
     def do_DELETE(self):
-        iid = self.item_id()
-        if iid is None:
+        me = self.user()
+        iid, uid = self.item_id(), self.user_id()
+        if iid is None and uid is None:
             return self.send(404)
-        if not self.admin():
+        if not me:
             return self.send(401, {"error": "nicht eingeloggt"})
         with LOCK:
-            items = load()
-            new = [i for i in items if i["id"] != iid]
-            if len(new) == len(items):
+            if iid is not None:
+                items = load()
+                it = next((i for i in items if i["id"] == iid), None)
+                if not it:
+                    return self.send(404, {"error": "nicht gefunden"})
+                if it.get("owner") != me["id"] and not me.get("admin"):
+                    return self.send(403, {"error": "gehört einem anderen Account"})
+                save([i for i in items if i["id"] != iid])
+                return self.send(200, {})
+            if not me.get("admin"):
+                return self.send(403, {"error": "nur Admin"})
+            if uid == me["id"]:
+                return self.send(400, {"error": "du kannst dich nicht selbst löschen"})
+            users = load_users()
+            if not any(u["id"] == uid for u in users):
                 return self.send(404, {"error": "nicht gefunden"})
-            save(new)
+            save_users([u for u in users if u["id"] != uid])
+            items = load()  # hand the deleted account's items to the deleting admin
+            for i in items:
+                if i.get("owner") == uid:
+                    i["owner"] = me["id"]
+            save(items)
         self.send(200, {})
 
     def do_PATCH(self):
-        iid = self.item_id()
-        if iid is None:
+        me = self.user()
+        iid, uid = self.item_id(), self.user_id()
+        if self.path == "/api/me":
+            uid = me["id"] if me else None
+        elif iid is None and uid is None:
             return self.send(404)
-        if not self.admin():
+        if not me:
             return self.send(401, {"error": "nicht eingeloggt"})
         d = self.body()
         with LOCK:
-            items = load()
-            for i in items:
-                if i["id"] == iid:
-                    for k, mx in (("brand", 80), ("name", 200), ("url", 600), ("img", 600), ("price", 20), ("size", 20)):
-                        if k in d:
-                            i[k] = str(d[k])[:mx]
-                    if "tags" in d:
-                        i["tags"] = [str(t)[:30] for t in d["tags"]][:6]
-                    save(items)
-                    return self.send(200, i)
+            if iid is not None:
+                items = load()
+                for i in items:
+                    if i["id"] == iid:
+                        if i.get("owner") != me["id"] and not me.get("admin"):
+                            return self.send(403, {"error": "gehört einem anderen Account"})
+                        for k, mx in (("brand", 80), ("name", 200), ("url", 600), ("img", 600), ("price", 20), ("size", 20)):
+                            if k in d:
+                                i[k] = str(d[k])[:mx]
+                        if "tags" in d:
+                            i["tags"] = [str(t)[:30] for t in d["tags"]][:6]
+                        save(items)
+                        return self.send(200, i)
+                return self.send(404, {"error": "nicht gefunden"})
+            if uid != me["id"] and not me.get("admin"):
+                return self.send(403, {"error": "nur Admin"})
+            users = load_users()
+            for u in users:
+                if u["id"] == uid:
+                    if "sizes" in d and uid == me["id"]:
+                        u["sizes"] = clean_sizes(d["sizes"])
+                    if d.get("password"):
+                        if len(str(d["password"])) < MIN_PW:
+                            return self.send(400, {"error": "Passwort: mindestens %d Zeichen" % MIN_PW})
+                        set_pw(u, str(d["password"]))
+                    save_users(users)
+                    return self.send(200, public_user(u))
         self.send(404, {"error": "nicht gefunden"})
 
 
