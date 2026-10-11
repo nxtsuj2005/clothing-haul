@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Justins Klamotten-Haul</title>
+<title>Klamotten-Haul</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Manrope:wght@400;600;700&display=swap">
@@ -84,7 +84,7 @@ dialog form+form{margin-top:4px}
 <body>
 <div class="wrap">
   <header>
-    <h1>Justins Klamotten-Haul</h1>
+    <h1 id="title">Klamotten-Haul</h1>
     <p class="lead" id="lead">Einfach auf den Namen tippen und die angegebene Größe auswählen.</p>
   </header>
 
@@ -101,7 +101,7 @@ dialog form+form{margin-top:4px}
 
   <div id="list"></div>
 
-  <p class="foot">Falls eine Größe als Zoll angezeigt wird (z.&nbsp;B. „W48/L34“): Größe 64 entspricht W48, Länge L34. Gibt es nur Doppelgrößen, dann 64/66 (3XL) nehmen. Preise können sich ändern.</p>
+  <p class="foot">Falls eine Größe in Zoll oder als Doppelgröße angezeigt wird (z.&nbsp;B. „W48/L34“ oder „64/66“), die passende Größe laut Größenkarte wählen. Preise können sich ändern.</p>
   <p class="foot"><button class="link" id="loginbtn">Anmelden</button></p>
 </div>
 
@@ -170,6 +170,20 @@ function shopOf(u){
 const uname=id=>(users.find(u=>u.id===id)||{}).name||'';
 const canEdit=it=>me&&(me.admin||me.id===it.owner);
 
+function poss(n,multi){
+  if(/[sßxz]$/i.test(n))return multi?n+'’':n;  // Max, Hans: no extra s
+  return multi?n+'’s':n+'s';
+}
+function renderTitle(){
+  const names=users.map(u=>u.name);
+  let t='Klamotten-Haul';
+  if(names.length===1)t=poss(names[0],false)+' '+t;
+  else if(names.length>1){
+    const p=names.map(n=>poss(n,true));
+    t=p.slice(0,-1).join(', ')+' und '+p[p.length-1]+' '+t;
+  }
+  $('title').textContent=t;document.title=t;
+}
 function renderTabs(){
   const t=$('tabs');t.replaceChildren();
   t.hidden=users.length<2;
@@ -196,7 +210,7 @@ function renderSizes(){
   }
 }
 function render(){
-  renderTabs();renderSizes();
+  renderTitle();renderTabs();renderSizes();
   const vis=items.filter(i=>filter==='all'||String(i.owner)===filter);
   $('lead').textContent=vis.length+' Teile. Einfach auf den Namen tippen und die angegebene Größe auswählen.';
   const groups=new Map();

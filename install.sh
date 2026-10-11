@@ -26,7 +26,6 @@ install -d -o www-data -g www-data /opt/clothing
 fetch() { curl -fsSL "$RAW/$1" -o "$2"; }
 fetch index.html /var/www/html/index.html
 fetch server/server.py /opt/clothing/server.py
-fetch server/default_sizes.json /opt/clothing/default_sizes.json
 # live data is never overwritten
 [ -f /opt/clothing/items.json ] || fetch server/items.json /opt/clothing/items.json
 chown -R www-data:www-data /opt/clothing
@@ -69,7 +68,6 @@ cat > /usr/local/bin/update-clothing-haul <<UPD
 set -e
 curl -fsSL "$RAW/index.html" -o /var/www/html/index.html
 curl -fsSL "$RAW/server/server.py" -o /opt/clothing/server.py
-curl -fsSL "$RAW/server/default_sizes.json" -o /opt/clothing/default_sizes.json
 chown -R www-data:www-data /opt/clothing
 systemctl restart clothing-api
 echo "updated (data in /opt/clothing untouched)"
