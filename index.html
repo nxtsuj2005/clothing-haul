@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Justins Klamotten-Haul</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Manrope:wght@400;600;700&display=swap">
+<style>
+/* Layout: single column list, size cheat-sheet up top, each item a row with type chip + size badge */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --fg:#151a22; --muted:#5d6676; --line:#dde2ea;
+  --accent:#2c4f8a; --accent-soft:#e3eaf6; --chip:#eef1f5;
+  --display:"Archivo Black","Arial Black",Impact,sans-serif;
+  --body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10141b; --surface:#181e28; --fg:#e8ecf2; --muted:#9aa4b5; --line:#2a3240;
+  --accent:#8fb0e8; --accent-soft:#1f2c44; --chip:#222a37; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10141b; --surface:#181e28; --fg:#e8ecf2; --muted:#9aa4b5; --line:#2a3240;
+  --accent:#8fb0e8; --accent-soft:#1f2c44; --chip:#222a37; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.5}
+.wrap{max-width:720px;margin:0 auto;padding-inline:16px;padding-block:32px 48px;display:flex;flex-direction:column;gap:24px}
+h1{font-family:var(--display);font-size:clamp(28px,6vw,40px);line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.01em}
+.lead{margin:6px 0 0;color:var(--muted)}
+.sizes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.size{background:var(--accent-soft);border-radius:12px;padding:14px 16px}
+.size .lbl{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.size .val{font-family:var(--display);font-size:28px;color:var(--accent);line-height:1.2}
+.size .note{font-size:14px;color:var(--muted)}
+ol{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+li{display:flex;gap:14px;align-items:center;padding:14px 16px;border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+.num{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:700;width:1.6em;flex:none}
+.info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.brand{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.name{font-weight:600;color:var(--fg);text-decoration:none}
+.name:hover,.name:focus-visible{color:var(--accent);text-decoration:underline}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.chip{background:var(--chip);border-radius:999px;padding:2px 10px;font-size:13px;color:var(--muted)}
+.badge{flex:none;white-space:nowrap;font-family:var(--display);font-size:18px;color:var(--accent);background:var(--accent-soft);border-radius:10px;padding:6px 10px;min-width:64px;text-align:center}
+.open{flex:none;color:var(--accent);font-weight:700;text-decoration:none;font-size:14px}
+.open:focus-visible,.name:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+h2.shop{font-family:var(--display);font-size:20px;margin:8px 0 -12px;letter-spacing:.01em}
+.foot{color:var(--muted);font-size:14px;margin:0}
+.thumb{flex:none;width:72px;height:96px;object-fit:cover;border-radius:8px;background:var(--chip)}
+.price{font-weight:700;color:var(--fg);font-variant-numeric:tabular-nums}
+@media (max-width:480px){.open{display:none}}
+.bar{display:flex;gap:8px;align-items:center;justify-content:space-between;background:var(--accent-soft);border-radius:12px;padding:10px 14px;font-size:14px}
+.btn{font:inherit;font-size:14px;font-weight:700;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:6px 12px;cursor:pointer}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn.del{color:#b3261e;border-color:#b3261e55}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:disabled{opacity:.6;cursor:wait}
+.add{display:grid;grid-template-columns:1fr 110px auto;gap:8px}
+.add input,dialog input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);min-width:0;width:100%}
+.acts{display:flex;gap:6px;margin-top:6px}
+.link{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;text-decoration:underline;cursor:pointer;padding:0}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--fg);max-width:420px;width:calc(100% - 32px)}
+dialog::backdrop{background:#0008}
+dialog label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-top:10px;text-transform:uppercase;letter-spacing:.06em}
+dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.msg{color:#b3261e;font-size:14px;margin:8px 0 0;min-height:1em}
+.empty{padding:20px;color:var(--muted)}
+.thumb.none{display:block}
+@media (max-width:480px){.add{grid-template-columns:1fr 1fr}.add input:first-child{grid-column:1/-1}.add button{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Justins Klamotten-Haul</h1>
+    <p class="lead" id="lead">Einfach auf den Namen tippen und die angegebene Größe auswählen.</p>
+  </header>
+
+  <section class="sizes" aria-label="Größen">
+    <div class="size"><div class="lbl">Hosen &amp; Jeans</div><div class="val">64</div><div class="note">bei Jeans in Zoll: W48 / L34</div></div>
+    <div class="size"><div class="lbl">T-Shirts</div><div class="val">4XL</div><div class="note">bewusst etwas weiter</div></div>
+    <div class="size"><div class="lbl">Jacke</div><div class="val">3XL</div><div class="note">bei bonprix: 64/66</div></div>
+  </section>
+
+  <div class="bar" id="bar" hidden><span>Admin-Modus</span><button class="btn" id="logout">Abmelden</button></div>
+  <form class="add" id="addform" hidden>
+    <input id="a-url" type="url" placeholder="Link zum Artikel einfügen" required>
+    <input id="a-size" placeholder="Größe" required>
+    <button class="btn pri" id="a-btn">Hinzufügen</button>
+    <p class="msg" id="a-msg" style="grid-column:1/-1;margin:0"></p>
+  </form>
+
+  <div id="list"></div>
+
+  <p class="foot">Falls eine Größe als Zoll angezeigt wird (z.&nbsp;B. „W48/L34“): Größe 64 entspricht W48, Länge L34. Gibt es nur Doppelgrößen, dann 64/66 (3XL) nehmen. Preise können sich ändern.</p>
+  <p class="foot"><button class="link" id="loginbtn">Admin</button></p>
+</div>
+
+<dialog id="logindlg">
+  <form method="dialog" id="loginform">
+    <label for="pw">Passwort</label>
+    <input id="pw" type="password" autocomplete="current-password" required>
+    <p class="msg" id="l-msg"></p>
+    <div class="row"><button type="button" class="btn" id="l-cancel">Abbrechen</button><button class="btn pri">Anmelden</button></div>
+  </form>
+</dialog>
+
+<dialog id="editdlg">
+  <form method="dialog" id="editform">
+    <label for="e-name">Name</label><input id="e-name">
+    <label for="e-brand">Marke</label><input id="e-brand">
+    <label for="e-price">Preis (€)</label><input id="e-price">
+    <label for="e-size">Größe</label><input id="e-size">
+    <label for="e-img">Bild-URL</label><input id="e-img">
+    <label for="e-url">Link</label><input id="e-url">
+    <label for="e-tags">Chips (Komma-getrennt)</label><input id="e-tags">
+    <p class="msg" id="e-msg"></p>
+    <div class="row"><button type="button" class="btn" id="e-cancel">Abbrechen</button><button class="btn pri">Speichern</button></div>
+  </form>
+</dialog>
+
+<script>
+const $=id=>document.getElementById(id);
+let items=[], admin=false, editId=null;
+
+async function api(method,path,body){
+  const r=await fetch('/api'+path,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||('Fehler '+r.status));
+  return j;
+}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function shopOf(u){
+  try{const h=new URL(u).hostname.replace(/^(www|en)\./,'');
+    if(h.includes('zalando'))return 'Zalando'; if(h.includes('bonprix'))return 'bonprix';
+    return h;}catch{return 'Sonstige'}
+}
+function render(){
+  $('lead').textContent=items.length+' Teile. Einfach auf den Namen tippen und die angegebene Größe auswählen.';
+  const groups=new Map();
+  for(const it of items){const s=shopOf(it.url);if(!groups.has(s))groups.set(s,[]);groups.get(s).push(it)}
+  const root=$('list');root.replaceChildren();
+  if(!items.length)root.append(el('p','empty','Noch keine Teile.'));
+  let n=0;
+  for(const [shop,list] of groups){
+    root.append(el('h2','shop',shop));
+    const ol=el('ol');
+    for(const it of list){
+      n++;
+      const li=el('li');
+      li.append(el('span','num',n));
+      if(it.img){const im=el('img','thumb');im.src=it.img;im.alt='';im.loading='lazy';im.referrerPolicy='no-referrer';li.append(im)}
+      else li.append(el('div','thumb'));
+      const info=el('div','info');
+      info.append(el('span','brand',it.brand));
+      const a=el('a','name',it.name);a.href=it.url;a.target='_blank';a.rel='noopener';info.append(a);
+      if(it.price)info.append(el('div','price',it.price+' €'));
+      const meta=el('div','meta');for(const t of it.tags||[])meta.append(el('span','chip',t));
+      info.append(meta);
+      if(admin){
+        const acts=el('div','acts');
+        const e=el('button','btn','Bearbeiten');e.onclick=()=>openEdit(it);
+        const d=el('button','btn del','Löschen');d.onclick=()=>del(it);
+        acts.append(e,d);info.append(acts);
+      }
+      li.append(info,el('span','badge',it.size));
+      ol.append(li);
+    }
+    root.append(ol);
+  }
+}
+function setAdmin(v){
+  admin=v;$('bar').hidden=!v;$('addform').hidden=!v;$('loginbtn').hidden=v;render();
+}
+async function load(){items=await api('GET','/items');render()}
+
+$('loginbtn').onclick=()=>{$('l-msg').textContent='';$('logindlg').showModal();$('pw').focus()};
+$('l-cancel').onclick=()=>$('logindlg').close();
+$('loginform').onsubmit=async ev=>{
+  ev.preventDefault();
+  try{await api('POST','/login',{password:$('pw').value});$('pw').value='';$('logindlg').close();setAdmin(true)}
+  catch(e){$('l-msg').textContent=e.message}
+};
+$('logout').onclick=async()=>{await api('POST','/logout',{});setAdmin(false)};
+
+$('addform').onsubmit=async ev=>{
+  ev.preventDefault();
+  const b=$('a-btn');b.disabled=true;$('a-msg').textContent='Lade Artikeldaten …';
+  try{
+    const it=await api('POST','/items',{url:$('a-url').value.trim(),size:$('a-size').value.trim()});
+    $('a-url').value='';$('a-size').value='';
+    await load();
+    $('a-msg').textContent=(it.img&&it.price)?'':'Bild/Preis konnten nicht automatisch gelesen werden: bitte über „Bearbeiten“ ergänzen.';
+  }catch(e){$('a-msg').textContent=e.message}
+  b.disabled=false;
+};
+async function del(it){
+  if(!confirm('„'+it.name+'“ löschen?'))return;
+  try{await api('DELETE','/items/'+it.id);await load()}catch(e){alert(e.message)}
+}
+function openEdit(it){
+  editId=it.id;$('e-msg').textContent='';
+  for(const k of ['name','brand','price','size','img','url'])$('e-'+k).value=it[k]||'';
+  $('e-tags').value=(it.tags||[]).join(', ');
+  $('editdlg').showModal();
+}
+$('e-cancel').onclick=()=>$('editdlg').close();
+$('editform').onsubmit=async ev=>{
+  ev.preventDefault();
+  const body={tags:$('e-tags').value.split(',').map(t=>t.trim()).filter(Boolean)};
+  for(const k of ['name','brand','price','size','img','url'])body[k]=$('e-'+k).value.trim();
+  try{await api('PATCH','/items/'+editId,body);$('editdlg').close();await load()}
+  catch(e){$('e-msg').textContent=e.message}
+};
+
+(async()=>{
+  try{const me=await api('GET','/me');admin=me.admin}catch{}
+  $('bar').hidden=!admin;$('addform').hidden=!admin;$('loginbtn').hidden=admin;
+  try{await load()}catch(e){$('list').textContent='Konnte Liste nicht laden: '+e.message}
+})();
+</script>
+</body>
+</html>
