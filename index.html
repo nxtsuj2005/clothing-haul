@@ -99,8 +99,10 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 
 <dialog id="logindlg">
   <form method="dialog" id="loginform">
-    <label for="pw">Passwort</label>
+    <label for="pw" id="pw-lbl">Passwort</label>
     <input id="pw" type="password" autocomplete="current-password" required>
+    <div id="pw2-wrap" hidden><label for="pw2">Passwort wiederholen</label>
+    <input id="pw2" type="password" autocomplete="new-password"></div>
     <p class="msg" id="l-msg"></p>
     <div class="row"><button type="button" class="btn" id="l-cancel">Abbrechen</button><button class="btn pri">Anmelden</button></div>
   </form>
@@ -122,7 +124,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 
 <script>
 const $=id=>document.getElementById(id);
-let items=[], admin=false, editId=null;
+let items=[], admin=false, setup=false, editId=null;
 
 async function api(method,path,body){
   const r=await fetch('/api'+path,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
@@ -175,11 +177,18 @@ function setAdmin(v){
 }
 async function load(){items=await api('GET','/items');render()}
 
-$('loginbtn').onclick=()=>{$('l-msg').textContent='';$('logindlg').showModal();$('pw').focus()};
+function authUi(){
+  $('loginbtn').textContent=setup?'Admin einrichten':'Admin';
+  $('pw-lbl').textContent=setup?'Neues Passwort (mind. 4 Zeichen)':'Passwort';
+  $('pw').autocomplete=setup?'new-password':'current-password';
+  $('pw2-wrap').hidden=!setup;$('pw2').required=setup;
+}
+$('loginbtn').onclick=()=>{$('l-msg').textContent='';authUi();$('logindlg').showModal();$('pw').focus()};
 $('l-cancel').onclick=()=>$('logindlg').close();
 $('loginform').onsubmit=async ev=>{
   ev.preventDefault();
-  try{await api('POST','/login',{password:$('pw').value});$('pw').value='';$('logindlg').close();setAdmin(true)}
+  if(setup&&$('pw').value!==$('pw2').value){$('l-msg').textContent='Passwörter stimmen nicht überein';return}
+  try{await api('POST',setup?'/setup':'/login',{password:$('pw').value});$('pw').value='';$('pw2').value='';setup=false;$('logindlg').close();setAdmin(true)}
   catch(e){$('l-msg').textContent=e.message}
 };
 $('logout').onclick=async()=>{await api('POST','/logout',{});setAdmin(false)};
@@ -215,7 +224,8 @@ $('editform').onsubmit=async ev=>{
 };
 
 (async()=>{
-  try{const me=await api('GET','/me');admin=me.admin}catch{}
+  try{const me=await api('GET','/me');admin=me.admin;setup=me.setup}catch{}
+  authUi();
   $('bar').hidden=!admin;$('addform').hidden=!admin;$('loginbtn').hidden=admin;
   try{await load()}catch(e){$('list').textContent='Konnte Liste nicht laden: '+e.message}
 })();

@@ -10,13 +10,38 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 LOCK = threading.Lock()
 FAILS = {}  # ip -> (count, first_ts)
 
-with open(CONF) as f:
-    CFG = json.load(f)  # {"salt": hex, "hash": hex, "secret": hex}
+MIN_PW = 4
+
+
+def save_conf():
+    tmp = CONF + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(CFG, f)
+    os.replace(tmp, CONF)
+
+
+# {"secret": hex} until an admin password is chosen, then also {"salt": hex, "hash": hex}
+try:
+    with open(CONF) as f:
+        CFG = json.load(f)
+except FileNotFoundError:
+    CFG = {"secret": secrets.token_hex(32)}
+    save_conf()
+
+
+def hash_pw(pw, salt):
+    return hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1).hex()
 
 
 def check_pw(pw):
-    h = hashlib.scrypt(pw.encode(), salt=bytes.fromhex(CFG["salt"]), n=2**14, r=8, p=1)
-    return hmac.compare_digest(h.hex(), CFG["hash"])
+    if "hash" not in CFG:
+        return False
+    return hmac.compare_digest(hash_pw(pw, bytes.fromhex(CFG["salt"])), CFG["hash"])
+
+
+def cookie():
+    return "haul_admin=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (make_token(), 30 * 86400)
 
 
 def make_token():
@@ -141,11 +166,22 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/items":
             return self.send(200, load())
         if self.path == "/api/me":
-            return self.send(200, {"admin": self.admin()})
+            return self.send(200, {"admin": self.admin(), "setup": "hash" not in CFG})
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
         d = self.body()
+        if self.path == "/api/setup":
+            pw = str(d.get("password", ""))
+            if len(pw) < MIN_PW:
+                return self.send(400, {"error": "mindestens %d Zeichen" % MIN_PW})
+            with LOCK:
+                if "hash" in CFG:
+                    return self.send(409, {"error": "Admin ist schon eingerichtet"})
+                salt = os.urandom(16)
+                CFG["salt"], CFG["hash"] = salt.hex(), hash_pw(pw, salt)
+                save_conf()
+            return self.send(200, {"admin": True}, [("Set-Cookie", cookie())])
         if self.path == "/api/login":
             ip = self.ip()
             cnt, ts = FAILS.get(ip, (0, 0))
@@ -153,8 +189,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send(429, {"error": "zu viele Versuche, kurz warten"})
             if check_pw(str(d.get("password", ""))):
                 FAILS.pop(ip, None)
-                ck = "haul_admin=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (make_token(), 30 * 86400)
-                return self.send(200, {"admin": True}, [("Set-Cookie", ck)])
+                return self.send(200, {"admin": True}, [("Set-Cookie", cookie())])
             FAILS[ip] = (cnt + 1 if time.time() - ts < 300 else 1, time.time())
             time.sleep(1)
             return self.send(401, {"error": "falsches Passwort"})
